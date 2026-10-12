@@ -2,7 +2,7 @@ import time
 import json
 import math
 
-from hex import Hex
+from cuflow.hex import Hex
 
 from browser import document, window, html, ajax, aio
 

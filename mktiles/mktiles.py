@@ -8,7 +8,7 @@ import shapely.geometry as sg
 
 sys.path.append("..")
 
-import hex
+from cuflow import hex
 
 empty = sg.GeometryCollection()
 

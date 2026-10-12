@@ -16,20 +16,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
           cache: pip
-          cache-dependency-path: cuflow/requirements.txt
+          cache-dependency-path: cuflow/pyproject.toml
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -e '.[dev]'
         working-directory: cuflow
 
       - name: Run regression tests
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest -q
         working-directory: cuflow
 
       - name: Build td2e2
-        run: python td2e2.py
+        run: python examples/td2e2.py
         working-directory: cuflow
 
       - name: Verify generated outputs

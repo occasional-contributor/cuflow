@@ -1,4 +1,6 @@
 __pycache__
+*.py[cod]
+.DS_Store
 *.GBL
 *.GBO
 *.GBP
@@ -36,3 +38,14 @@ webviewer/node_modules/
 .easyeda_cache/
 preflight/easyeda-footprints/
 0
+
+# Python packaging / tooling artifacts
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.*/

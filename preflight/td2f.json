@@ -1,6 +1,6 @@
 {
   "board": "td2f",
-  "source": "td2f.py",
+  "source": "examples/td2f.py",
   "bom": "td2f-jlcpcb-bom.csv",
   "pnp": "td2f-jlcpcb-pnp.csv",
   "part_catalog": "preflight/td2f-jlcpcb-parts.csv",
@@ -22,25 +22,44 @@
   "netlist_file": "td2f.net.json",
   "external_footprints": {
     "cache_dir": "preflight/easyeda-footprints",
-    "name_atlas_source": "td2f.py",
+    "name_atlas_source": "examples/td2f.py",
     "name_atlas_variable": "PREFLIGHT_NAME_ATLAS"
   },
-  "excluded_designators": ["J2", "U4"],
+  "excluded_designators": [
+    "J2",
+    "U4"
+  ],
   "expected_gml_contours": 5,
   "expected_gml_contours_reason": "one square board perimeter plus J1's four plated USB-C mounting slots",
   "topology": {
-    "copper_layers": ["GTL", "G2L", "G3L", "GBL"],
+    "copper_layers": [
+      "GTL",
+      "G2L",
+      "G3L",
+      "GBL"
+    ],
     "net_clearance_mm": 0.09,
     "plated_internal_gml_contours": 4,
     "net_seeds": {
       "GND": [
-        {"layer": "G2L", "selector": "largest"}
+        {
+          "layer": "G2L",
+          "selector": "largest"
+        }
       ],
       "VCC": [
-        {"layer": "G3L", "selector": "largest"}
+        {
+          "layer": "G3L",
+          "selector": "largest"
+        }
       ]
     },
-    "forbidden_connections": [["GND", "VCC"]]
+    "forbidden_connections": [
+      [
+        "GND",
+        "VCC"
+      ]
+    ]
   },
   "manual_checks": [
     "In a CAM viewer, identify the five GML contours as one square board perimeter and J1's four closed mounting slots.",

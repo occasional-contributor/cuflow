@@ -5,7 +5,7 @@ from pathlib import Path
 
 import shapely.geometry as sg
 
-import cuflow as cu
+from cuflow import cuflow as cu
 from tools.pcb_assembly import (
     DeviceNameAtlas,
     ExternalFootprint,
@@ -30,13 +30,20 @@ from tools.pcb_topology import DrillHit, build_topology
 def footprint(*pads):
     pin_names = {item.number: f"PIN_{item.number}" for item in pads}
     return ExternalFootprint(
-        "C1", "TEST", "Maker", "MPN", "https://example.com/C1", "abc",
-        "DEVICE", pin_names, tuple(pads))
+        "C1",
+        "TEST",
+        "Maker",
+        "MPN",
+        "https://example.com/C1",
+        "abc",
+        "DEVICE",
+        pin_names,
+        tuple(pads),
+    )
 
 
 def pad(number="1", center=(1, 0), sides=("top",), pad_type="smd"):
-    return FootprintPad(
-        number, pad_type, "rect", center, (0.4, 0.6), 0, sides)
+    return FootprintPad(number, pad_type, "rect", center, (0.4, 0.6), 0, sides)
 
 
 class PlacementTests(unittest.TestCase):
@@ -58,16 +65,13 @@ class PlacementTests(unittest.TestCase):
             Placement("R2", "C1", (0, 0), "Top", 0),
             ("GTL", "G2L", "G3L", "GBL"),
         )[0]
-        atlas = DeviceNameAtlas(
-            {"C1": "ROOT"}, {"J3": {"3": "MISO"}})
+        atlas = DeviceNameAtlas({"C1": "ROOT"}, {"J3": {"3": "MISO"}})
         self.assertEqual(format_device_pad(placed, atlas), "R2.3")
         self.assertEqual(
-            format_device_pad(
-                replace(placed, designator="U1", pin_name="GPIO20"), atlas),
-            "ROOT.GPIO20")
-        self.assertEqual(
-            format_device_pad(replace(placed, designator="J3"), atlas),
-            "J3.MISO")
+            format_device_pad(replace(placed, designator="U1", pin_name="GPIO20"), atlas),
+            "ROOT.GPIO20",
+        )
+        self.assertEqual(format_device_pad(replace(placed, designator="J3"), atlas), "J3.MISO")
 
     def test_local_y_is_inverted(self):
         placed = place_footprint(
@@ -84,26 +88,20 @@ class PlacementTests(unittest.TestCase):
             Placement("J1", "C1", (0, 0), "Top", 0),
             ("GTL", "G2L", "G3L", "GBL"),
         )
-        self.assertEqual(
-            placed[0].layers, ("GTL", "G2L", "G3L", "GBL"))
+        self.assertEqual(placed[0].layers, ("GTL", "G2L", "G3L", "GBL"))
 
 
 class ComponentSpacingTests(unittest.TestCase):
-    def placed_body(
-            self, designator, package, xy, side="Top", rotation=0):
+    def placed_body(self, designator, package, xy, side="Top", rotation=0):
         source = replace(footprint(pad()), package=package)
-        return place_component_body(
-            source, Placement(designator, "C1", xy, side, rotation))
+        return place_component_body(source, Placement(designator, "C1", xy, side, rotation))
 
     def test_package_categories_cover_jlcpcb_matrix_names(self):
         self.assertEqual(jlcpcb_smd_category("R0402"), "0402")
         self.assertEqual(jlcpcb_smd_category("C0603"), "0603")
-        self.assertEqual(
-            jlcpcb_smd_category("LQFN-56_L7.0-W7.0-P0.4-EP"), "QFN")
-        self.assertEqual(
-            jlcpcb_smd_category("MSOP-10_L3.0-W3.0-P0.5"), "SOP/SOIC")
-        self.assertEqual(
-            jlcpcb_smd_category("SOT-23-5_L3.0-W1.7-P0.95"), "SOT")
+        self.assertEqual(jlcpcb_smd_category("LQFN-56_L7.0-W7.0-P0.4-EP"), "QFN")
+        self.assertEqual(jlcpcb_smd_category("MSOP-10_L3.0-W3.0-P0.5"), "SOP/SOIC")
+        self.assertEqual(jlcpcb_smd_category("SOT-23-5_L3.0-W1.7-P0.95"), "SOT")
         self.assertIsNone(jlcpcb_smd_category("OSC-SMD_4P-L3.2-W2.5"))
 
     def test_body_sizes_use_chip_standard_or_package_dimensions(self):
@@ -120,8 +118,7 @@ class ComponentSpacingTests(unittest.TestCase):
         self.assertEqual(jlcpcb_smd_spacing_mm("BGA", "BGA"), 2.0)
 
     def test_body_rotation_follows_pnp_rotation(self):
-        body = self.placed_body(
-            "U1", "SOT-23-5_L3.0-W1.7-P0.95", (5, 10), rotation=90)
+        body = self.placed_body("U1", "SOT-23-5_L3.0-W1.7-P0.95", (5, 10), rotation=90)
         minimum_x, minimum_y, maximum_x, maximum_y = body.geometry.bounds
         self.assertAlmostEqual(maximum_x - minimum_x, 1.7)
         self.assertAlmostEqual(maximum_y - minimum_y, 3.0)
@@ -129,8 +126,7 @@ class ComponentSpacingTests(unittest.TestCase):
     def test_same_side_gap_below_recommendation_is_a_violation(self):
         first = self.placed_body("R1", "R0402", (0, 0))
         second = self.placed_body("R2", "R0402", (1.149, 0))
-        violations, pair_count = jlcpcb_body_spacing_violations(
-            (first, second))
+        violations, pair_count = jlcpcb_body_spacing_violations((first, second))
         self.assertEqual(pair_count, 1)
         self.assertEqual(len(violations), 1)
         self.assertAlmostEqual(violations[0].clearance, 0.149)
@@ -139,18 +135,20 @@ class ComponentSpacingTests(unittest.TestCase):
     def test_opposite_side_parts_are_not_compared(self):
         first = self.placed_body("R1", "R0402", (0, 0), side="Top")
         second = self.placed_body("R2", "R0402", (0, 0), side="Bottom")
-        violations, pair_count = jlcpcb_body_spacing_violations(
-            (first, second))
+        violations, pair_count = jlcpcb_body_spacing_violations((first, second))
         self.assertEqual(violations, ())
         self.assertEqual(pair_count, 0)
 
 
 class AttachmentTests(unittest.TestCase):
     def test_pad_maps_to_physical_net(self):
-        topology = build_topology({
-            "GTL": sg.box(4, 8, 6, 10),
-            "GBL": sg.box(20, 20, 21, 21),
-        }, ())
+        topology = build_topology(
+            {
+                "GTL": sg.box(4, 8, 6, 10),
+                "GBL": sg.box(20, 20, 21, 21),
+            },
+            (),
+        )
         placed = place_footprint(
             footprint(pad(center=(1, 0))),
             Placement("R1", "C1", (5, 10), "Top", 270),
@@ -162,13 +160,15 @@ class AttachmentTests(unittest.TestCase):
 
     def test_through_hole_uses_actual_connector_not_nominal_land(self):
         top_and_bottom = sg.box(-0.2, -0.2, 0.2, 0.2)
-        topology = build_topology({
-            "GTL": top_and_bottom,
-            "G2L": sg.box(0.3, -0.5, 0.5, 0.5),
-            "GBL": top_and_bottom,
-        }, (DrillHit(1, 0.3, (0, 0)),))
-        large_tht = FootprintPad(
-            "1", "thru_hole", "rect", (0, 0), (1, 1), 0, ("all",))
+        topology = build_topology(
+            {
+                "GTL": top_and_bottom,
+                "G2L": sg.box(0.3, -0.5, 0.5, 0.5),
+                "GBL": top_and_bottom,
+            },
+            (DrillHit(1, 0.3, (0, 0)),),
+        )
+        large_tht = FootprintPad("1", "thru_hole", "rect", (0, 0), (1, 1), 0, ("all",))
         placed = place_footprint(
             footprint(large_tht),
             Placement("J1", "C1", (0, 0), "Top", 0),
@@ -194,13 +194,10 @@ class CsvTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             basename = str(Path(directory) / "board")
             board.pnp(basename)
-            placements = read_preflight_placements(
-                Path(basename + "-preflight-placements.json"))
-            assembly_pnp = Path(
-                basename + "-jlcpcb-pnp.csv").read_text(encoding="utf-8")
+            placements = read_preflight_placements(Path(basename + "-preflight-placements.json"))
+            assembly_pnp = Path(basename + "-jlcpcb-pnp.csv").read_text(encoding="utf-8")
 
-        self.assertEqual(placements, (
-            Placement("J4", "C46061679", (3, 4), "Bottom", 270),))
+        self.assertEqual(placements, (Placement("J4", "C46061679", (3, 4), "Bottom", 270),))
         self.assertNotIn("J4", assembly_pnp)
 
     def test_literal_name_atlas_maps_external_header_numbers(self):
@@ -214,7 +211,8 @@ class CsvTests(unittest.TestCase):
                 "    'external_pad_numbers': (2, 1),\n"
                 "  }},\n"
                 "}\n",
-                encoding="utf-8")
+                encoding="utf-8",
+            )
             atlas = load_name_atlas(source, "ATLAS")
 
         self.assertEqual(atlas.ic_roots_by_lcsc["C1"], "ROOT")
@@ -225,14 +223,13 @@ class CsvTests(unittest.TestCase):
             root = Path(directory)
             bom = root / "bom.csv"
             pnp = root / "pnp.csv"
-            bom.write_text(
-                'Designator,JLCPCB Part #\n"R1,R2",C123\n',
-                encoding="utf-8")
+            bom.write_text('Designator,JLCPCB Part #\n"R1,R2",C123\n', encoding="utf-8")
             pnp.write_text(
                 "Designator,Mid X,Mid Y,Layer,Rotation\n"
                 "R1,1.2mm,3.4mm,Top,90\n"
                 "R2,5mm,6mm,Bottom,180\n",
-                encoding="utf-8")
+                encoding="utf-8",
+            )
             mapping = read_jlc_bom(bom)
             placements = read_jlc_pnp(pnp, mapping)
         self.assertEqual(mapping, {"R1": "C123", "R2": "C123"})
@@ -251,8 +248,7 @@ class CsvTests(unittest.TestCase):
             )
             placements = read_preflight_placements(manifest)
 
-        self.assertEqual(placements, (
-            Placement("J4", "C46061679", (30.5, 29.5), "Bottom", 0),))
+        self.assertEqual(placements, (Placement("J4", "C46061679", (30.5, 29.5), "Bottom", 0),))
 
 
 if __name__ == "__main__":

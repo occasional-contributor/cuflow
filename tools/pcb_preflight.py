@@ -21,6 +21,10 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# Make the src/ layout importable when running from a plain checkout.
+_SRC = ROOT / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 GERBER_COORD = re.compile(r"^X(-?\d+)Y(-?\d+)D0([123])\*$")
 DRILL_HIT = re.compile(r"^X-?\d+Y-?\d+$")
 
@@ -43,9 +47,7 @@ class Audit:
         self.device_rows: list[dict[str, Any]] = []
         self.netlist_hash: str | None = None
 
-    def add(
-            self, name: str, passed: bool, detail: str,
-            detail_html: str | None = None) -> None:
+    def add(self, name: str, passed: bool, detail: str, detail_html: str | None = None) -> None:
         self.checks.append(Check(name, passed, detail, detail_html))
 
     @property
@@ -68,17 +70,14 @@ def load_json(path: Path) -> dict[str, Any]:
 def canonicalize_json_sequences(value: Any) -> Any:
     """Return JSON data with mappings and every sequence stably ordered."""
     if isinstance(value, dict):
-        return {
-            key: canonicalize_json_sequences(value[key])
-            for key in sorted(value)
-        }
+        return {key: canonicalize_json_sequences(value[key]) for key in sorted(value)}
     if isinstance(value, list):
         items = [canonicalize_json_sequences(item) for item in value]
         return sorted(
             items,
             key=lambda item: json.dumps(
-                item, sort_keys=True, separators=(",", ":"),
-                ensure_ascii=False),
+                item, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ),
         )
     return value
 
@@ -87,13 +86,12 @@ def stable_json_hash(document: dict[str, Any]) -> str:
     """Hash JSON after recursively sorting mappings and every sequence."""
     canonical = canonicalize_json_sequences(document)
     payload = json.dumps(
-        canonical, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False).encode("utf-8")
+        canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
-def discovered_netlist_document(
-        board: str, parsed_nets: list[dict[str, Any]]) -> dict[str, Any]:
+def discovered_netlist_document(board: str, parsed_nets: list[dict[str, Any]]) -> dict[str, Any]:
     """Describe physical connectivity without geometry or generated net IDs."""
     terminals_by_physical_net: dict[str, list[dict[str, Any]]] = {}
     unattached: list[dict[str, Any]] = []
@@ -104,15 +102,11 @@ def discovered_netlist_document(
             if physical_net is None:
                 unattached.append(identity)
             else:
-                terminals_by_physical_net.setdefault(
-                    physical_net, []).append(identity)
+                terminals_by_physical_net.setdefault(physical_net, []).append(identity)
     return {
         "format": "cuflow-discovered-netlist-1",
         "board": board,
-        "nets": [
-            {"terminals": terminals}
-            for terminals in terminals_by_physical_net.values()
-        ],
+        "nets": [{"terminals": terminals} for terminals in terminals_by_physical_net.values()],
         "unattached": unattached,
     }
 
@@ -123,12 +117,8 @@ def optional_source_literal(path: Path, variable: str) -> Any | None:
     for statement in module.body:
         if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
             continue
-        targets = (
-            statement.targets if isinstance(statement, ast.Assign)
-            else (statement.target,))
-        if any(
-                isinstance(target, ast.Name) and target.id == variable
-                for target in targets):
+        targets = statement.targets if isinstance(statement, ast.Assign) else (statement.target,)
+        if any(isinstance(target, ast.Name) and target.id == variable for target in targets):
             return ast.literal_eval(statement.value)
     return None
 
@@ -207,8 +197,7 @@ def load_catalog(audit: Audit, path: Path) -> dict[str, dict[str, str]]:
     audit.add(
         "Part catalog schema",
         not missing,
-        "all required fields present" if not missing else
-        "missing fields: " + ", ".join(missing),
+        "all required fields present" if not missing else "missing fields: " + ", ".join(missing),
     )
     if missing:
         return {}
@@ -224,13 +213,11 @@ def load_catalog(audit: Audit, path: Path) -> dict[str, dict[str, str]]:
         if normalized["kind"] not in ("discrete", "part"):
             malformed.append(f"line {line_number}: invalid kind {normalized['kind']!r}")
         if empty:
-            malformed.append(
-                f"line {line_number}: empty " + ", ".join(empty))
+            malformed.append(f"line {line_number}: empty " + ", ".join(empty))
         if normalized["kind"] == "part" and (
-                normalized["bom_comment"] !=
-                normalized["manufacturer_part_number"]):
-            malformed.append(
-                f"line {line_number}: part comment is not its MPN")
+            normalized["bom_comment"] != normalized["manufacturer_part_number"]
+        ):
+            malformed.append(f"line {line_number}: part comment is not its MPN")
         catalog[code] = normalized
 
     valid = not duplicates and not malformed
@@ -247,14 +234,12 @@ def load_catalog(audit: Audit, path: Path) -> dict[str, dict[str, str]]:
 
 
 def audit_bom_and_pnp(
-        audit: Audit, profile: dict[str, Any],
-        catalog: dict[str, dict[str, str]]) -> None:
+    audit: Audit, profile: dict[str, Any], catalog: dict[str, dict[str, str]]
+) -> None:
     bom_path = relative_path(profile["bom"])
     pnp_path = relative_path(profile["pnp"])
-    bom_fields_required = {
-        "Comment", "Designator", "Footprint", "JLCPCB Part #"}
-    pnp_fields_required = {
-        "Designator", "Mid X", "Mid Y", "Layer", "Rotation"}
+    bom_fields_required = {"Comment", "Designator", "Footprint", "JLCPCB Part #"}
+    pnp_fields_required = {"Designator", "Mid X", "Mid Y", "Layer", "Rotation"}
 
     try:
         bom_fields, bom_rows = read_csv(bom_path)
@@ -265,8 +250,9 @@ def audit_bom_and_pnp(
     audit.add(
         "JLCPCB BOM schema",
         not missing_bom_fields,
-        f"{len(bom_rows)} rows" if not missing_bom_fields else
-        "missing fields: " + ", ".join(missing_bom_fields),
+        f"{len(bom_rows)} rows"
+        if not missing_bom_fields
+        else "missing fields: " + ", ".join(missing_bom_fields),
     )
     if missing_bom_fields:
         return
@@ -289,45 +275,47 @@ def audit_bom_and_pnp(
             if actual_comment != selected["bom_comment"]:
                 rule = "value" if selected["kind"] == "discrete" else "MPN"
                 issues.append(
-                    f"Comment {actual_comment!r} != expected {rule} "
-                    f"{selected['bom_comment']!r}")
+                    f"Comment {actual_comment!r} != expected {rule} {selected['bom_comment']!r}"
+                )
             if actual_footprint != selected["bom_footprint"]:
                 issues.append(
-                    f"Footprint {actual_footprint!r} != expected "
-                    f"{selected['bom_footprint']!r}")
+                    f"Footprint {actual_footprint!r} != expected {selected['bom_footprint']!r}"
+                )
         if not designators:
             issues.append("missing designator")
         status = "PASS" if not issues else "FAIL: " + "; ".join(issues)
         if issues:
             mismatches.append(
-                f"{row['Designator'] or '<blank>'} ({code or '<blank>'}): "
-                + "; ".join(issues))
-        audit.bom_rows.append({
-            "designator": row["Designator"],
-            "lcsc": code,
-            "kind": selected["kind"] if selected else "unknown",
-            "comment": row["Comment"],
-            "footprint": row["Footprint"],
-            "mpn": selected["manufacturer_part_number"] if selected else "",
-            "manufacturer_footprint": (
-                selected["manufacturer_footprint"] if selected else ""),
-            "jlcpcb_class": selected["jlcpcb_class"] if selected else "",
-            "status": status,
-        })
+                f"{row['Designator'] or '<blank>'} ({code or '<blank>'}): " + "; ".join(issues)
+            )
+        audit.bom_rows.append(
+            {
+                "designator": row["Designator"],
+                "lcsc": code,
+                "kind": selected["kind"] if selected else "unknown",
+                "comment": row["Comment"],
+                "footprint": row["Footprint"],
+                "mpn": selected["manufacturer_part_number"] if selected else "",
+                "manufacturer_footprint": (selected["manufacturer_footprint"] if selected else ""),
+                "jlcpcb_class": selected["jlcpcb_class"] if selected else "",
+                "status": status,
+            }
+        )
 
     duplicate_bom_designators = duplicate_values(bom_designators)
     audit.add(
         "BOM designators",
         bool(bom_designators) and not duplicate_bom_designators,
         f"{len(bom_designators)} unique populated designators"
-        if bom_designators and not duplicate_bom_designators else
-        "duplicates: " + ", ".join(duplicate_bom_designators),
+        if bom_designators and not duplicate_bom_designators
+        else "duplicates: " + ", ".join(duplicate_bom_designators),
     )
     audit.add(
         "BOM part selections",
         not mismatches,
         f"all {len(bom_rows)} rows match reviewed LCSC/comment/footprint selections"
-        if not mismatches else " | ".join(mismatches),
+        if not mismatches
+        else " | ".join(mismatches),
     )
 
     try:
@@ -339,8 +327,9 @@ def audit_bom_and_pnp(
     audit.add(
         "JLCPCB PNP schema",
         not missing_pnp_fields,
-        f"{len(pnp_rows)} rows" if not missing_pnp_fields else
-        "missing fields: " + ", ".join(missing_pnp_fields),
+        f"{len(pnp_rows)} rows"
+        if not missing_pnp_fields
+        else "missing fields: " + ", ".join(missing_pnp_fields),
     )
     if missing_pnp_fields:
         return
@@ -353,19 +342,17 @@ def audit_bom_and_pnp(
     missing_from_bom = sorted(pnp_set - bom_set)
     agreement_issues: list[str] = []
     if duplicate_pnp_designators:
-        agreement_issues.append(
-            "duplicate PNP: " + ", ".join(duplicate_pnp_designators))
+        agreement_issues.append("duplicate PNP: " + ", ".join(duplicate_pnp_designators))
     if missing_from_pnp:
-        agreement_issues.append(
-            "missing from PNP: " + ", ".join(missing_from_pnp))
+        agreement_issues.append("missing from PNP: " + ", ".join(missing_from_pnp))
     if missing_from_bom:
-        agreement_issues.append(
-            "missing from BOM: " + ", ".join(missing_from_bom))
+        agreement_issues.append("missing from BOM: " + ", ".join(missing_from_bom))
     audit.add(
         "BOM/PNP designator agreement",
         not agreement_issues,
         f"{len(bom_set)} populated parts agree exactly"
-        if not agreement_issues else "; ".join(agreement_issues),
+        if not agreement_issues
+        else "; ".join(agreement_issues),
     )
 
     excluded = set(profile.get("excluded_designators", []))
@@ -374,14 +361,16 @@ def audit_bom_and_pnp(
         "Suppressed parts",
         not present_excluded,
         "absent as intended: " + ", ".join(sorted(excluded))
-        if excluded and not present_excluded else
-        ("unexpectedly populated: " + ", ".join(present_excluded)
-         if present_excluded else "no suppressed designators configured"),
+        if excluded and not present_excluded
+        else (
+            "unexpectedly populated: " + ", ".join(present_excluded)
+            if present_excluded
+            else "no suppressed designators configured"
+        ),
     )
 
 
-def audit_manufacturing_files(
-        audit: Audit, profile: dict[str, Any]) -> None:
+def audit_manufacturing_files(audit: Audit, profile: dict[str, Any]) -> None:
     for extension, require_geometry in profile["gerber_layers"].items():
         path = ROOT / f"{profile['board']}.{extension}"
         if not path.is_file():
@@ -392,18 +381,22 @@ def audit_manufacturing_files(
         audit.add(
             f"Gerber {extension}",
             has_geometry or not require_geometry,
-            f"{path.stat().st_size} bytes; " +
-            ("contains plotted geometry" if has_geometry else
-             "intentionally allowed to be empty" if not require_geometry else
-             "contains no plotted geometry"),
+            f"{path.stat().st_size} bytes; "
+            + (
+                "contains plotted geometry"
+                if has_geometry
+                else "intentionally allowed to be empty"
+                if not require_geometry
+                else "contains no plotted geometry"
+            ),
         )
 
     drill_path = relative_path(profile["drill_file"])
     if drill_path.is_file():
         drill_text = drill_path.read_text(encoding="ascii")
         drill_hits = sum(
-            DRILL_HIT.match(line.strip()) is not None
-            for line in drill_text.splitlines())
+            DRILL_HIT.match(line.strip()) is not None for line in drill_text.splitlines()
+        )
         audit.add(
             "Drill file",
             drill_hits > 0,
@@ -419,7 +412,8 @@ def audit_manufacturing_files(
         audit.add(
             "Airwires",
             not has_airwires,
-            "no plotted airwires" if not has_airwires
+            "no plotted airwires"
+            if not has_airwires
             else "AIR layer contains unrouted connections",
         )
     else:
@@ -429,16 +423,13 @@ def audit_manufacturing_files(
         gml_path = ROOT / f"{profile['board']}.GML"
         if gml_path.is_file():
             paths = gerber_paths(gml_path.read_text(encoding="ascii"))
-            closed = sum(
-                len(path) >= 2 and path[0] == path[-1] for path in paths)
+            closed = sum(len(path) >= 2 and path[0] == path[-1] for path in paths)
             expected = int(profile["expected_gml_contours"])
-            reason = profile.get(
-                "expected_gml_contours_reason", "profile requirement")
+            reason = profile.get("expected_gml_contours_reason", "profile requirement")
             audit.add(
                 "Board-specific GML contours",
                 len(paths) == expected and closed == expected,
-                f"found {len(paths)} contours ({closed} closed); expected "
-                f"{expected}: {reason}",
+                f"found {len(paths)} contours ({closed} closed); expected {expected}: {reason}",
             )
 
 
@@ -450,27 +441,23 @@ def audit_copper_edges(audit: Audit, profile: dict[str, Any]) -> None:
     limits.update(profile.get("copper_edge_clearance_mm") or {})
     import shapely.geometry as sg
     from shapely.ops import nearest_points
+
     if __package__:
-        from .pcb_topology import (
-            TopologyFormatError, parse_cuflow_gerber, parse_cuflow_paths_text)
+        from .pcb_topology import TopologyFormatError, parse_cuflow_gerber, parse_cuflow_paths_text
     else:
-        from pcb_topology import (
-            TopologyFormatError, parse_cuflow_gerber, parse_cuflow_paths_text)
+        from pcb_topology import TopologyFormatError, parse_cuflow_gerber, parse_cuflow_paths_text
 
     board = profile["board"]
     try:
-        paths = parse_cuflow_paths_text(
-            (ROOT / f"{board}.GML").read_text(encoding="ascii"))
+        paths = parse_cuflow_paths_text((ROOT / f"{board}.GML").read_text(encoding="ascii"))
         if not paths or any(not path.is_ring for path in paths):
             raise ValueError("GML must contain closed, simple contours")
         # Internal slots have separate rules, particularly plated slots.
-        perimeter = max((sg.Polygon(path) for path in paths),
-                        key=lambda polygon: polygon.area)
+        perimeter = max((sg.Polygon(path) for path in paths), key=lambda polygon: polygon.area)
         if not perimeter.is_valid or perimeter.area <= 0:
             raise ValueError("invalid outer GML perimeter")
     except (OSError, ValueError, TopologyFormatError) as error:
-        audit.add("Copper-to-board-edge clearance", False,
-                  f"cannot read perimeter: {error}")
+        audit.add("Copper-to-board-edge clearance", False, f"cannot read perimeter: {error}")
         return
 
     for layer, limit in limits.items():
@@ -486,22 +473,27 @@ def audit_copper_edges(audit: Audit, profile: dict[str, Any]) -> None:
             outside = copper.difference(perimeter)
             if not outside.is_empty:
                 point = outside.representative_point()
-                audit.add(name, False,
-                          f"copper outside board at ({point.x:.3f}, "
-                          f"{point.y:.3f}) mm; needs {clearance:.3f} mm inset")
+                audit.add(
+                    name,
+                    False,
+                    f"copper outside board at ({point.x:.3f}, "
+                    f"{point.y:.3f}) mm; needs {clearance:.3f} mm inset",
+                )
                 continue
             distance = copper.distance(perimeter.boundary)
             point, _ = nearest_points(copper, perimeter.boundary)
-            audit.add(name, distance + 1e-9 >= clearance,
-                      f"minimum {distance:.4f} mm; needs {clearance:.3f} mm; "
-                      f"nearest copper at ({point.x:.3f}, {point.y:.3f}) mm "
-                      "(includes unconnected artwork)")
+            audit.add(
+                name,
+                distance + 1e-9 >= clearance,
+                f"minimum {distance:.4f} mm; needs {clearance:.3f} mm; "
+                f"nearest copper at ({point.x:.3f}, {point.y:.3f}) mm "
+                "(includes unconnected artwork)",
+            )
         except (OSError, ValueError, TopologyFormatError) as error:
             audit.add(name, False, f"cannot check copper: {error}")
 
 
-def audit_copper_topology(
-        audit: Audit, profile: dict[str, Any]) -> None:
+def audit_copper_topology(audit: Audit, profile: dict[str, Any]) -> None:
     config = profile.get("topology")
     if config is None:
         return
@@ -529,12 +521,10 @@ def audit_copper_topology(
         )
 
     board = profile["board"]
-    copper_layers = tuple(config.get(
-        "copper_layers", ("GTL", "G2L", "G3L", "GBL")))
+    copper_layers = tuple(config.get("copper_layers", ("GTL", "G2L", "G3L", "GBL")))
     try:
         layer_geometry = {
-            layer: parse_cuflow_gerber(ROOT / f"{board}.{layer}")
-            for layer in copper_layers
+            layer: parse_cuflow_gerber(ROOT / f"{board}.{layer}") for layer in copper_layers
         }
         drill_hits = parse_excellon(relative_path(profile["drill_file"]))
     except (OSError, TopologyFormatError, ValueError) as error:
@@ -555,21 +545,15 @@ def audit_copper_topology(
         audit.add(
             "Topology plated slots",
             len(slot_contours) == expected_slots,
-            f"found {len(slot_contours)} internal plated contours; "
-            f"expected {expected_slots}",
+            f"found {len(slot_contours)} internal plated contours; expected {expected_slots}",
         )
         interlayer_connectors.extend(
-            InterlayerConnector(
-                f"GML plated slot {index}", contour,
-                kind="plated-slot")
+            InterlayerConnector(f"GML plated slot {index}", contour, kind="plated-slot")
             for index, contour in enumerate(slot_contours, 1)
         )
 
-    topology = build_topology(
-        layer_geometry, drill_hits, interlayer_connectors)
-    component_count = sum(
-        len(components)
-        for components in topology.components_by_layer.values())
+    topology = build_topology(layer_geometry, drill_hits, interlayer_connectors)
+    component_count = sum(len(components) for components in topology.components_by_layer.values())
     mapped_drills = len(drill_hits) - len(topology.unmapped_drill_indices)
     audit.add(
         "Copper topology",
@@ -584,17 +568,19 @@ def audit_copper_topology(
     if netlist_file is not None:
         expected_hash = None
         expected_hash_error = None
-        hash_variable = profile.get(
-            "netlist_hash_variable", "PREFLIGHT_NETLIST_HASH")
+        hash_variable = profile.get("netlist_hash_variable", "PREFLIGHT_NETLIST_HASH")
         try:
-            expected_hash = optional_source_literal(
-                relative_path(profile["source"]), hash_variable)
+            expected_hash = optional_source_literal(relative_path(profile["source"]), hash_variable)
         except (KeyError, OSError, SyntaxError, TypeError, ValueError) as error:
             expected_hash_error = str(error)
         audit_intended_netlist(
-            audit, relative_path(netlist_file), board, topology,
+            audit,
+            relative_path(netlist_file),
+            board,
+            topology,
             expected_hash=expected_hash,
-            expected_hash_error=expected_hash_error)
+            expected_hash_error=expected_hash_error,
+        )
 
     named_nets: dict[str, set[str]] = {}
     seed_errors: list[str] = []
@@ -619,9 +605,9 @@ def audit_copper_topology(
 
     if named_nets:
         seed_detail = ", ".join(
-            f"{name}={len(net_ids)} physical net"
-            f"{'s' if len(net_ids) != 1 else ''}"
-            for name, net_ids in named_nets.items())
+            f"{name}={len(net_ids)} physical net{'s' if len(net_ids) != 1 else ''}"
+            for name, net_ids in named_nets.items()
+        )
         audit.add(
             "Topology net seeds",
             not seed_errors,
@@ -635,36 +621,33 @@ def audit_copper_topology(
 
     for pair in config.get("forbidden_connections", []):
         if not isinstance(pair, list) or len(pair) != 2:
-            audit.add(
-                "Topology forbidden connection", False,
-                f"invalid configured pair: {pair!r}")
+            audit.add("Topology forbidden connection", False, f"invalid configured pair: {pair!r}")
             continue
         first, second = pair
         if first not in named_nets or second not in named_nets:
             audit.add(
-                f"{first}/{second} copper isolation", False,
-                "one or both named seed sets are missing")
+                f"{first}/{second} copper isolation",
+                False,
+                "one or both named seed sets are missing",
+            )
             continue
         shared = sorted(named_nets[first] & named_nets[second])
         audit.add(
             f"{first}/{second} copper isolation",
             not shared,
-            "no shared physical net" if not shared else
-            "shared physical net" + ("s " if len(shared) != 1 else " ") +
-            ", ".join(shared),
+            "no shared physical net"
+            if not shared
+            else "shared physical net" + ("s " if len(shared) != 1 else " ") + ", ".join(shared),
         )
 
-    connected_net_ids = audit_external_footprints(
-        audit, profile, topology, labels_by_net)
+    connected_net_ids = audit_external_footprints(audit, profile, topology, labels_by_net)
     if connected_net_ids is None:
         connected_net_ids = {net.net_id for net in topology.nets}
     else:
-        omitted_nets = [
-            net for net in topology.nets
-            if net.net_id not in connected_net_ids
-        ]
+        omitted_nets = [net for net in topology.nets if net.net_id not in connected_net_ids]
         audit.add(
-            "Unconnected copper classification", True,
+            "Unconnected copper classification",
+            True,
             f"excluded {len(omitted_nets)} copper island"
             f"{'s' if len(omitted_nets) != 1 else ''} without component "
             "pads or interlayer connections from the electrical netlist "
@@ -672,32 +655,33 @@ def audit_copper_topology(
         )
 
     clearance = float(config.get("net_clearance_mm", 0.1))
-    clearance_violations = net_clearance_violations(
-        topology, clearance, connected_net_ids)
+    clearance_violations = net_clearance_violations(topology, clearance, connected_net_ids)
     clearance_detail = (
         f"all electrical nets are separated by at least {clearance:.3f} mm"
-        if not clearance_violations else
-        f"{len(clearance_violations)} violation(s) at {clearance:.3f} mm: " +
-        "; ".join(
+        if not clearance_violations
+        else f"{len(clearance_violations)} violation(s) at {clearance:.3f} mm: "
+        + "; ".join(
             f"{violation.layer} {violation.net_id} intersects buffered "
             f"{'/'.join(violation.conflicting_net_ids)} at "
             f"({violation.centroid[0]:.3f}, {violation.centroid[1]:.3f}) mm"
             for violation in clearance_violations[:20]
-        ) + (" ..." if len(clearance_violations) > 20 else "")
+        )
+        + (" ..." if len(clearance_violations) > 20 else "")
     )
     clearance_detail_html = None
     if clearance_violations:
         clearance_detail_html = (
             f"{len(clearance_violations)} violation(s) at "
-            f"{clearance:.3f} mm: " +
-            "; ".join(
+            f"{clearance:.3f} mm: "
+            + "; ".join(
                 f"{html_cell(violation.layer)} "
                 f"{net_report_link(violation.net_id)} intersects buffered "
                 f"{'/'.join(net_report_link(net_id) for net_id in violation.conflicting_net_ids)} "
                 f"at ({violation.centroid[0]:.3f}, "
                 f"{violation.centroid[1]:.3f}) mm"
                 for violation in clearance_violations[:20]
-            ) + (" ..." if len(clearance_violations) > 20 else "")
+            )
+            + (" ..." if len(clearance_violations) > 20 else "")
         )
     audit.add(
         "Net-to-net clearance",
@@ -713,23 +697,31 @@ def audit_copper_topology(
         for connector_index in net.connector_indices:
             kind = topology.connectors[connector_index].kind
             connector_kinds[kind] = connector_kinds.get(kind, 0) + 1
-        audit.topology_rows.append({
-            "net": net.net_id,
-            "labels": ", ".join(sorted(labels_by_net.get(net.net_id, ()))),
-            "layers": ", ".join(net.layers),
-            "components": str(len(net.components)),
-            "connectors": ", ".join(
-                f"{kind}={count}"
-                for kind, count in sorted(connector_kinds.items())) or "-",
-            "area": ", ".join(
-                f"{layer}={area:.3f}"
-                for layer, area in net.area_by_layer.items()),
-        })
+        audit.topology_rows.append(
+            {
+                "net": net.net_id,
+                "labels": ", ".join(sorted(labels_by_net.get(net.net_id, ()))),
+                "layers": ", ".join(net.layers),
+                "components": str(len(net.components)),
+                "connectors": ", ".join(
+                    f"{kind}={count}" for kind, count in sorted(connector_kinds.items())
+                )
+                or "-",
+                "area": ", ".join(
+                    f"{layer}={area:.3f}" for layer, area in net.area_by_layer.items()
+                ),
+            }
+        )
+
 
 def audit_intended_netlist(
-        audit: Audit, path: Path, board: str, topology: Any,
-        expected_hash: Any = None,
-        expected_hash_error: str | None = None) -> None:
+    audit: Audit,
+    path: Path,
+    board: str,
+    topology: Any,
+    expected_hash: Any = None,
+    expected_hash_error: str | None = None,
+) -> None:
     """Compare independently declared logical nets with manufactured copper."""
     try:
         document = load_json(path)
@@ -741,8 +733,7 @@ def audit_intended_netlist(
     if document.get("format") != "cuflow-netlist-1":
         errors.append(f"unsupported format {document.get('format')!r}")
     if document.get("board") != board:
-        errors.append(
-            f"board {document.get('board')!r} does not match {board!r}")
+        errors.append(f"board {document.get('board')!r} does not match {board!r}")
     nets = document.get("nets")
     if not isinstance(nets, list):
         errors.append("nets must be a list")
@@ -786,28 +777,26 @@ def audit_intended_netlist(
             y = terminal.get("y_mm")
             valid = True
             if not isinstance(designator, str) or not designator:
-                errors.append(
-                    f"{terminal_location} has invalid designator")
+                errors.append(f"{terminal_location} has invalid designator")
                 valid = False
-            if (not isinstance(pad_index, int) or
-                    isinstance(pad_index, bool) or pad_index < 1):
-                errors.append(
-                    f"{terminal_location} has invalid pad_index")
+            if not isinstance(pad_index, int) or isinstance(pad_index, bool) or pad_index < 1:
+                errors.append(f"{terminal_location} has invalid pad_index")
                 valid = False
             if pad is not None and not isinstance(pad, str):
                 errors.append(f"{terminal_location} has invalid pad name")
                 valid = False
             if not isinstance(layer, str) or layer not in topology.layer_order:
-                errors.append(
-                    f"{terminal_location} has invalid copper layer {layer!r}")
+                errors.append(f"{terminal_location} has invalid copper layer {layer!r}")
                 valid = False
-            if (isinstance(x, bool) or isinstance(y, bool) or
-                    not isinstance(x, (int, float)) or
-                    not isinstance(y, (int, float)) or
-                    not math.isfinite(float(x)) or
-                    not math.isfinite(float(y))):
-                errors.append(
-                    f"{terminal_location} has invalid coordinates")
+            if (
+                isinstance(x, bool)
+                or isinstance(y, bool)
+                or not isinstance(x, (int, float))
+                or not isinstance(y, (int, float))
+                or not math.isfinite(float(x))
+                or not math.isfinite(float(y))
+            ):
+                errors.append(f"{terminal_location} has invalid coordinates")
                 valid = False
             if not valid:
                 continue
@@ -815,58 +804,67 @@ def audit_intended_netlist(
             if key in terminal_owners:
                 errors.append(
                     f"{designator} pad {pad_index} belongs to both "
-                    f"{terminal_owners[key]} and {net_id}")
+                    f"{terminal_owners[key]} and {net_id}"
+                )
                 continue
             terminal_owners[key] = net_id
-            parsed_terminals.append({
-                "identity": {
-                    "designator": designator,
-                    "pad_index": pad_index,
-                    "pad": pad,
-                },
-                "label": f"{designator}.{pad or pad_index}",
-                "layer": layer,
-                "xy": (float(x), float(y)),
-            })
-        parsed_nets.append({
-            "id": net_id,
-            "name": name if isinstance(name, str) else None,
-            "terminals": parsed_terminals,
-        })
+            parsed_terminals.append(
+                {
+                    "identity": {
+                        "designator": designator,
+                        "pad_index": pad_index,
+                        "pad": pad,
+                    },
+                    "label": f"{designator}.{pad or pad_index}",
+                    "layer": layer,
+                    "xy": (float(x), float(y)),
+                }
+            )
+        parsed_nets.append(
+            {
+                "id": net_id,
+                "name": name if isinstance(name, str) else None,
+                "terminals": parsed_terminals,
+            }
+        )
 
     if errors:
         audit.add(
-            "Intended net manifest", False,
-            f"{len(errors)} format error(s): " + "; ".join(errors[:20]) +
-            (" ..." if len(errors) > 20 else ""))
+            "Intended net manifest",
+            False,
+            f"{len(errors)} format error(s): "
+            + "; ".join(errors[:20])
+            + (" ..." if len(errors) > 20 else ""),
+        )
         return
     terminal_count = sum(len(net["terminals"]) for net in parsed_nets)
     audit.add(
-        "Intended net manifest", True,
-        f"{len(parsed_nets)} logical nets and {terminal_count} unique "
-        f"terminals in {path.name}")
+        "Intended net manifest",
+        True,
+        f"{len(parsed_nets)} logical nets and {terminal_count} unique terminals in {path.name}",
+    )
 
     attachment_errors: list[str] = []
     for net in parsed_nets:
         for terminal in net["terminals"]:
             try:
-                component = topology.component_at(
-                    terminal["layer"], terminal["xy"])
-                terminal["physical_net"] = topology.net_for_component(
-                    component)
+                component = topology.component_at(terminal["layer"], terminal["xy"])
+                terminal["physical_net"] = topology.net_for_component(component)
             except LookupError as error:
                 attachment_errors.append(
                     f"{terminal['label']} at {terminal['layer']} "
                     f"({terminal['xy'][0]:.6f}, "
-                    f"{terminal['xy'][1]:.6f}): {error}")
+                    f"{terminal['xy'][1]:.6f}): {error}"
+                )
     audit.add(
         "Intended net terminal attachment",
         not attachment_errors,
         f"all {terminal_count} terminals touch exactly one physical net"
-        if not attachment_errors else
-        f"{len(attachment_errors)}/{terminal_count} terminals do not touch "
-        "exactly one physical net: " + "; ".join(attachment_errors[:20]) +
-        (" ..." if len(attachment_errors) > 20 else ""),
+        if not attachment_errors
+        else f"{len(attachment_errors)}/{terminal_count} terminals do not touch "
+        "exactly one physical net: "
+        + "; ".join(attachment_errors[:20])
+        + (" ..." if len(attachment_errors) > 20 else ""),
     )
 
     discovered_document = discovered_netlist_document(board, parsed_nets)
@@ -874,101 +872,103 @@ def audit_intended_netlist(
     audit.netlist_hash = actual_hash
     if expected_hash_error is not None:
         audit.add(
-            "Discovered netlist connectivity hash", False,
-            f"SHA-256 {actual_hash}; cannot read expected hash: "
-            f"{expected_hash_error}")
+            "Discovered netlist connectivity hash",
+            False,
+            f"SHA-256 {actual_hash}; cannot read expected hash: {expected_hash_error}",
+        )
     elif expected_hash is None:
         audit.add(
-            "Discovered netlist connectivity hash", True,
-            f"SHA-256 {actual_hash}; no expected hash configured")
-    elif (not isinstance(expected_hash, str) or
-          re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash) is None):
+            "Discovered netlist connectivity hash",
+            True,
+            f"SHA-256 {actual_hash}; no expected hash configured",
+        )
+    elif (
+        not isinstance(expected_hash, str)
+        or re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash) is None
+    ):
         audit.add(
-            "Discovered netlist connectivity hash", False,
-            f"SHA-256 {actual_hash}; expected hash is not 64 hexadecimal "
-            "characters")
+            "Discovered netlist connectivity hash",
+            False,
+            f"SHA-256 {actual_hash}; expected hash is not 64 hexadecimal characters",
+        )
     else:
         expected_hash = expected_hash.lower()
         matches = actual_hash == expected_hash
         audit.add(
-            "Discovered netlist connectivity hash", matches,
-            f"SHA-256 {actual_hash}; " +
-            ("matches configured hash" if matches else
-             f"expected {expected_hash}"),
+            "Discovered netlist connectivity hash",
+            matches,
+            f"SHA-256 {actual_hash}; "
+            + ("matches configured hash" if matches else f"expected {expected_hash}"),
         )
 
     def logical_label(net: dict[str, Any]) -> str:
-        return (
-            f"{net['id']} ({net['name']})"
-            if net["name"] is not None else net["id"])
+        return f"{net['id']} ({net['name']})" if net["name"] is not None else net["id"]
 
     continuity_errors: list[str] = []
     for net in parsed_nets:
-        physical_nets = sorted({
-            terminal["physical_net"]
-            for terminal in net["terminals"]
-            if "physical_net" in terminal
-        })
+        physical_nets = sorted(
+            {
+                terminal["physical_net"]
+                for terminal in net["terminals"]
+                if "physical_net" in terminal
+            }
+        )
         missing = [
-            terminal["label"] for terminal in net["terminals"]
-            if "physical_net" not in terminal
+            terminal["label"] for terminal in net["terminals"] if "physical_net" not in terminal
         ]
         if missing:
-            continuity_errors.append(
-                f"{logical_label(net)} has unattached " + ", ".join(missing))
+            continuity_errors.append(f"{logical_label(net)} has unattached " + ", ".join(missing))
         elif len(physical_nets) != 1:
             assignments = ", ".join(
-                f"{terminal['label']}={terminal['physical_net']}"
-                for terminal in net["terminals"])
+                f"{terminal['label']}={terminal['physical_net']}" for terminal in net["terminals"]
+            )
             continuity_errors.append(
-                f"{logical_label(net)} spans " + "/".join(physical_nets) +
-                f": {assignments}")
+                f"{logical_label(net)} spans " + "/".join(physical_nets) + f": {assignments}"
+            )
     audit.add(
         "Intended net continuity",
         not continuity_errors,
         "every intended net occupies exactly one physical net"
-        if not continuity_errors else
-        f"{len(continuity_errors)} open net(s): " +
-        "; ".join(continuity_errors[:20]) +
-        (" ..." if len(continuity_errors) > 20 else ""),
+        if not continuity_errors
+        else f"{len(continuity_errors)} open net(s): "
+        + "; ".join(continuity_errors[:20])
+        + (" ..." if len(continuity_errors) > 20 else ""),
     )
 
     logical_by_physical: dict[str, list[dict[str, Any]]] = {}
     for net in parsed_nets:
         for physical_net in {
-                terminal["physical_net"]
-                for terminal in net["terminals"]
-                if "physical_net" in terminal}:
+            terminal["physical_net"] for terminal in net["terminals"] if "physical_net" in terminal
+        }:
             logical_by_physical.setdefault(physical_net, []).append(net)
     shorts = {
-        physical_net: nets
-        for physical_net, nets in logical_by_physical.items()
-        if len(nets) > 1
+        physical_net: nets for physical_net, nets in logical_by_physical.items() if len(nets) > 1
     }
     short_details = []
     for physical_net, joined_nets in sorted(shorts.items()):
         descriptions = []
         for net in joined_nets:
             terminals = ", ".join(
-                terminal["label"] for terminal in net["terminals"]
-                if terminal.get("physical_net") == physical_net)
+                terminal["label"]
+                for terminal in net["terminals"]
+                if terminal.get("physical_net") == physical_net
+            )
             descriptions.append(f"{logical_label(net)} [{terminals}]")
-        short_details.append(
-            f"{physical_net} joins " + " and ".join(descriptions))
+        short_details.append(f"{physical_net} joins " + " and ".join(descriptions))
     audit.add(
         "Intended net isolation",
         not short_details,
         "no physical net contains terminals from different intended nets"
-        if not short_details else
-        f"{len(short_details)} shorted physical net(s): " +
-        "; ".join(short_details[:20]) +
-        (" ..." if len(short_details) > 20 else ""),
+        if not short_details
+        else f"{len(short_details)} shorted physical net(s): "
+        + "; ".join(short_details[:20])
+        + (" ..." if len(short_details) > 20 else ""),
     )
 
 
 def audit_external_footprints(
-        audit: Audit, profile: dict[str, Any], topology: Any,
-        labels_by_net: dict[str, list[str]]) -> set[str] | None:
+    audit: Audit, profile: dict[str, Any], topology: Any, labels_by_net: dict[str, list[str]]
+) -> set[str] | None:
     config = profile.get("external_footprints")
     if config is None:
         return
@@ -1005,8 +1005,7 @@ def audit_external_footprints(
 
     try:
         lcsc_by_designator = read_jlc_bom(relative_path(profile["bom"]))
-        placements = read_jlc_pnp(
-            relative_path(profile["pnp"]), lcsc_by_designator)
+        placements = read_jlc_pnp(relative_path(profile["pnp"]), lcsc_by_designator)
     except (OSError, ValueError, csv.Error) as error:
         audit.add("External footprint placements", False, str(error))
         return
@@ -1017,49 +1016,50 @@ def audit_external_footprints(
     if supplemental_designators:
         try:
             manifest_placements = read_preflight_placements(
-                relative_path(config["placement_manifest"]))
+                relative_path(config["placement_manifest"])
+            )
             manifest_by_designator = {
-                placement.designator: placement
-                for placement in manifest_placements
+                placement.designator: placement for placement in manifest_placements
             }
-            missing = sorted(
-                supplemental_designators - manifest_by_designator.keys())
+            missing = sorted(supplemental_designators - manifest_by_designator.keys())
             populated = sorted(
-                supplemental_designators & {
-                    placement.designator for placement in placements})
+                supplemental_designators & {placement.designator for placement in placements}
+            )
             if missing or populated:
                 issues = []
                 if missing:
                     issues.append("missing: " + ", ".join(missing))
                 if populated:
-                    issues.append(
-                        "already in assembly PNP: " + ", ".join(populated))
+                    issues.append("already in assembly PNP: " + ", ".join(populated))
                 raise ValueError("; ".join(issues))
             supplemental = tuple(
                 manifest_by_designator[designator]
-                for designator in sorted(supplemental_designators))
+                for designator in sorted(supplemental_designators)
+            )
             placements += supplemental
             lcsc_by_designator = dict(lcsc_by_designator)
-            lcsc_by_designator.update({
-                placement.designator: placement.lcsc
-                for placement in supplemental
-            })
+            lcsc_by_designator.update(
+                {placement.designator: placement.lcsc for placement in supplemental}
+            )
         except (KeyError, OSError, ValueError, json.JSONDecodeError) as error:
             audit.add("Supplemental physical placements", False, str(error))
             return
         audit.add(
-            "Supplemental physical placements", True,
+            "Supplemental physical placements",
+            True,
             f"included {', '.join(sorted(supplemental_designators))} from "
             f"{len(manifest_placements)} generated physical placements",
         )
 
     footprints, cache_errors = load_footprints(
-        relative_path(config["cache_dir"]), lcsc_by_designator.values())
+        relative_path(config["cache_dir"]), lcsc_by_designator.values()
+    )
     audit.add(
         "External footprint cache",
         not cache_errors,
         f"{len(footprints)} unique LCSC footprints loaded"
-        if not cache_errors else "; ".join(cache_errors),
+        if not cache_errors
+        else "; ".join(cache_errors),
     )
     if cache_errors:
         return
@@ -1070,26 +1070,22 @@ def audit_external_footprints(
     for placement in assembly_placements:
         footprint = footprints[placement.lcsc]
         if jlcpcb_smd_category(footprint.package) is None:
-            outside_spacing_table.append(
-                f"{placement.designator} ({footprint.package})")
+            outside_spacing_table.append(f"{placement.designator} ({footprint.package})")
             continue
         try:
             placed_bodies.append(place_component_body(footprint, placement))
         except ValueError as error:
-            spacing_geometry_errors.append(
-                f"{placement.designator}: {error}")
+            spacing_geometry_errors.append(f"{placement.designator}: {error}")
     spacing_coverage_detail = (
         f"{len(placed_bodies)}/{len(assembly_placements)} populated "
         "placements match JLCPCB's published package matrix"
     )
     if outside_spacing_table:
-        spacing_coverage_detail += (
-            "; outside the matrix: " +
-            ", ".join(sorted(outside_spacing_table)))
+        spacing_coverage_detail += "; outside the matrix: " + ", ".join(
+            sorted(outside_spacing_table)
+        )
     if spacing_geometry_errors:
-        spacing_coverage_detail += (
-            "; missing body geometry: " +
-            "; ".join(spacing_geometry_errors))
+        spacing_coverage_detail += "; missing body geometry: " + "; ".join(spacing_geometry_errors)
     audit.add(
         "JLCPCB SMD spacing geometry",
         not spacing_geometry_errors,
@@ -1098,31 +1094,33 @@ def audit_external_footprints(
 
     if spacing_geometry_errors:
         audit.add(
-            "JLCPCB SMD body spacing", False,
+            "JLCPCB SMD body spacing",
+            False,
             "not evaluated because applicable package body geometry is missing",
         )
     else:
-        spacing_violations, spacing_pair_count = (
-            jlcpcb_body_spacing_violations(placed_bodies))
+        spacing_violations, spacing_pair_count = jlcpcb_body_spacing_violations(placed_bodies)
         if spacing_violations:
             spacing_detail = (
                 f"{len(spacing_violations)}/{spacing_pair_count} applicable "
                 "same-side body pair(s) are below JLCPCB's recommended "
-                "minimum: " + "; ".join(
+                "minimum: "
+                + "; ".join(
                     f"{item.first.designator} ({item.first.category}) to "
                     f"{item.second.designator} ({item.second.category}) "
                     f"is {item.clearance:.3f} mm; needs "
                     f"{item.required:.3f} mm"
                     for item in spacing_violations[:20]
-                ) + (" ..." if len(spacing_violations) > 20 else "")
+                )
+                + (" ..." if len(spacing_violations) > 20 else "")
             )
         else:
             spacing_detail = (
                 f"all {spacing_pair_count} applicable same-side body pairs "
-                "meet JLCPCB's recommended package-pair minimums")
+                "meet JLCPCB's recommended package-pair minimums"
+            )
         spacing_detail_html = (
-            html_cell(spacing_detail) +
-            f' (<a href="{html_cell(JLCPCB_SMD_SPACING_URL)}" '
+            html_cell(spacing_detail) + f' (<a href="{html_cell(JLCPCB_SMD_SPACING_URL)}" '
             'target="_blank" rel="noopener noreferrer">JLCPCB source</a>)'
         )
         audit.add(
@@ -1141,7 +1139,8 @@ def audit_external_footprints(
         audit.add("Device name atlas", False, str(error))
         return
     audit.add(
-        "Device name atlas", True,
+        "Device name atlas",
+        True,
         f"loaded {len(name_atlas.ic_roots_by_lcsc)} IC roots and "
         f"{len(name_atlas.header_pins)} header pin maps",
     )
@@ -1150,16 +1149,17 @@ def audit_external_footprints(
     placement_errors: list[str] = []
     for placement in placements:
         try:
-            placed_pads.extend(place_footprint(
-                footprints[placement.lcsc], placement,
-                topology.layer_order))
+            placed_pads.extend(
+                place_footprint(footprints[placement.lcsc], placement, topology.layer_order)
+            )
         except (KeyError, ValueError) as error:
             placement_errors.append(f"{placement.designator}: {error}")
     audit.add(
         "External footprint placement",
         not placement_errors,
         f"{len(placements)} parts placed with {len(placed_pads)} copper pads"
-        if not placement_errors else "; ".join(placement_errors),
+        if not placement_errors
+        else "; ".join(placement_errors),
     )
     if placement_errors:
         return
@@ -1177,67 +1177,57 @@ def audit_external_footprints(
         "Device pad naming",
         not naming_errors,
         f"all {len(attachments)} pads use the report naming schema"
-        if not naming_errors else "; ".join(naming_errors),
+        if not naming_errors
+        else "; ".join(naming_errors),
     )
     if naming_errors:
         return
 
     def display_name(attachment: Any) -> str:
-        return display_names[
-            (attachment.pad.designator, attachment.pad.pad_index)]
+        return display_names[(attachment.pad.designator, attachment.pad.pad_index)]
 
     def device_anchor(designator: str) -> str:
         return f"device-{designator.lower()}"
 
     def pad_anchor(attachment: Any) -> str:
-        return (
-            f"{device_anchor(attachment.pad.designator)}-"
-            f"pad-{attachment.pad.pad_index}"
-        )
+        return f"{device_anchor(attachment.pad.designator)}-pad-{attachment.pad.pad_index}"
 
-    bad_attachments = [
-        attachment for attachment in attachments
-        if len(attachment.net_ids) != 1
-    ]
+    bad_attachments = [attachment for attachment in attachments if len(attachment.net_ids) != 1]
     audit.add(
         "External pad attachment",
         not bad_attachments,
-        f"all {len(attachments)} EasyEDA-derived pads touch exactly one "
-        "physical copper net"
-        if not bad_attachments else
-        f"{len(bad_attachments)}/{len(attachments)} pads do not touch exactly "
-        "one physical net: " + ", ".join(
-            f"{display_name(attachment)}=" +
-            ("/".join(attachment.net_ids) or "none")
-            for attachment in bad_attachments[:20]) +
-        (" ..." if len(bad_attachments) > 20 else ""),
+        f"all {len(attachments)} EasyEDA-derived pads touch exactly one physical copper net"
+        if not bad_attachments
+        else f"{len(bad_attachments)}/{len(attachments)} pads do not touch exactly "
+        "one physical net: "
+        + ", ".join(
+            f"{display_name(attachment)}=" + ("/".join(attachment.net_ids) or "none")
+            for attachment in bad_attachments[:20]
+        )
+        + (" ..." if len(bad_attachments) > 20 else ""),
     )
     for attachment in attachments:
         center_x, center_y = attachment.pad.center
-        audit.pad_rows.append({
-            "status": "PASS" if len(attachment.net_ids) == 1 else "FAIL",
-            "pad": attachment.pad.number,
-            "device_pad": display_name(attachment),
-            "lcsc": attachment.pad.lcsc,
-            "layers": ", ".join(attachment.pad.layers),
-            "center": f"{center_x:.3f}, {center_y:.3f}",
-            "nets": ", ".join(attachment.net_ids) or "-",
-            "overlap": f"{attachment.overlap_area:.4f}",
-        })
+        audit.pad_rows.append(
+            {
+                "status": "PASS" if len(attachment.net_ids) == 1 else "FAIL",
+                "pad": attachment.pad.number,
+                "device_pad": display_name(attachment),
+                "lcsc": attachment.pad.lcsc,
+                "layers": ", ".join(attachment.pad.layers),
+                "center": f"{center_x:.3f}, {center_y:.3f}",
+                "nets": ", ".join(attachment.net_ids) or "-",
+                "overlap": f"{attachment.overlap_area:.4f}",
+            }
+        )
 
     attachments_by_net: dict[str, list[Any]] = {}
     for attachment in attachments:
         if len(attachment.net_ids) == 1:
-            attachments_by_net.setdefault(
-                attachment.net_ids[0], []).append(attachment)
-    connected_net_ids = {
-        net_id
-        for attachment in attachments
-        for net_id in attachment.net_ids
-    }
+            attachments_by_net.setdefault(attachment.net_ids[0], []).append(attachment)
+    connected_net_ids = {net_id for attachment in attachments for net_id in attachment.net_ids}
     connected_net_ids.update(labels_by_net)
-    connected_net_ids.update(
-        net.net_id for net in topology.nets if net.connector_indices)
+    connected_net_ids.update(net.net_id for net in topology.nets if net.connector_indices)
     for net in topology.nets:
         if net.net_id not in connected_net_ids:
             continue
@@ -1255,20 +1245,24 @@ def audit_external_footprints(
             "layers": ", ".join(net.layers),
         }
         if not net_attachments:
-            audit.net_rows.append({
-                **common,
-                "device_pad": "-",
-                "footprint_pad": "-",
-                "lcsc": "-",
-            })
+            audit.net_rows.append(
+                {
+                    **common,
+                    "device_pad": "-",
+                    "footprint_pad": "-",
+                    "lcsc": "-",
+                }
+            )
             continue
         for attachment in net_attachments:
-            audit.net_rows.append({
-                **common,
-                "device_pad": display_name(attachment),
-                "footprint_pad": attachment.pad.number,
-                "lcsc": attachment.pad.lcsc,
-            })
+            audit.net_rows.append(
+                {
+                    **common,
+                    "device_pad": display_name(attachment),
+                    "footprint_pad": attachment.pad.number,
+                    "lcsc": attachment.pad.lcsc,
+                }
+            )
     audit.add(
         "Net list",
         len({row["net"] for row in audit.net_rows}) == len(connected_net_ids),
@@ -1292,8 +1286,7 @@ def audit_external_footprints(
 
     attachments_by_designator: dict[str, list[Any]] = {}
     for attachment in attachments:
-        attachments_by_designator.setdefault(
-            attachment.pad.designator, []).append(attachment)
+        attachments_by_designator.setdefault(attachment.pad.designator, []).append(attachment)
     omitted_power_capacitors = 0
     listed_pad_count = 0
     for designator in sorted(attachments_by_designator, key=designator_key):
@@ -1302,7 +1295,8 @@ def audit_external_footprints(
             key=lambda item: (
                 natural_pad_number_key(item.pad.number),
                 item.pad.pad_index,
-            ))
+            ),
+        )
         first_pad = device_attachments[0].pad
         pad_rows: list[dict[str, Any]] = []
         for attachment in device_attachments:
@@ -1311,15 +1305,11 @@ def audit_external_footprints(
                 connections = ("no physical net",)
             elif len(attachment.net_ids) != 1:
                 connection_kind = "error"
-                connections = (
-                    "multiple physical nets: " +
-                    ", ".join(attachment.net_ids),)
+                connections = ("multiple physical nets: " + ", ".join(attachment.net_ids),)
             else:
                 net_id = attachment.net_ids[0]
                 logical_names = set(labels_by_net.get(net_id, ()))
-                power_names = tuple(
-                    name for name in ("GND", "VCC")
-                    if name in logical_names)
+                power_names = tuple(name for name in ("GND", "VCC") if name in logical_names)
                 if power_names:
                     connection_kind = "power"
                     connections = power_names
@@ -1336,10 +1326,13 @@ def audit_external_footprints(
                         if peer is attachment:
                             continue
                         label = display_name(peer)
-                        peers_by_name.setdefault(label, {
-                            "label": label,
-                            "anchor": pad_anchor(peer),
-                        })
+                        peers_by_name.setdefault(
+                            label,
+                            {
+                                "label": label,
+                                "anchor": pad_anchor(peer),
+                            },
+                        )
                     peers = tuple(peers_by_name.values())
                     if peers:
                         connection_kind = "pads"
@@ -1347,12 +1340,14 @@ def audit_external_footprints(
                     else:
                         connection_kind = "none"
                         connections = ("no other device pads",)
-            pad_rows.append({
-                "device_pad": display_name(attachment),
-                "anchor": pad_anchor(attachment),
-                "connection_kind": connection_kind,
-                "connections": connections,
-            })
+            pad_rows.append(
+                {
+                    "device_pad": display_name(attachment),
+                    "anchor": pad_anchor(attachment),
+                    "connection_kind": connection_kind,
+                    "connections": connections,
+                }
+            )
         power_connections = {
             connection
             for row in pad_rows
@@ -1366,15 +1361,17 @@ def audit_external_footprints(
         ):
             omitted_power_capacitors += 1
             continue
-        audit.device_rows.append({
-            "designator": designator,
-            "anchor": device_anchor(designator),
-            "part_name": name_atlas.ic_roots_by_lcsc.get(first_pad.lcsc, ""),
-            "manufacturer": first_pad.manufacturer,
-            "lcsc": first_pad.lcsc,
-            "lcsc_url": first_pad.lcsc_url,
-            "pads": pad_rows,
-        })
+        audit.device_rows.append(
+            {
+                "designator": designator,
+                "anchor": device_anchor(designator),
+                "part_name": name_atlas.ic_roots_by_lcsc.get(first_pad.lcsc, ""),
+                "manufacturer": first_pad.manufacturer,
+                "lcsc": first_pad.lcsc,
+                "lcsc_url": first_pad.lcsc_url,
+                "pads": pad_rows,
+            }
+        )
         listed_pad_count += len(pad_rows)
     audit.add(
         "Device connection list",
@@ -1402,12 +1399,11 @@ def net_anchor(net_id: str) -> str:
 def net_report_link(net_id: str) -> str:
     return (
         f'<a class="net-link" href="#{html_cell(net_anchor(net_id))}">'
-        f'<code>{html_cell(net_id)}</code></a>')
+        f"<code>{html_cell(net_id)}</code></a>"
+    )
 
 
-def write_report(
-        path: Path, profile: dict[str, Any], audit: Audit,
-        generation_output: str) -> None:
+def write_report(path: Path, profile: dict[str, Any], audit: Audit, generation_output: str) -> None:
     result = "PASS" if audit.passed else "FAIL"
     generated = datetime.now().astimezone().isoformat(timespec="seconds")
     result_class = "pass" if audit.passed else "fail"
@@ -1425,13 +1421,15 @@ def write_report(
         toc_items.append(("generator-output", "Generator Output"))
     toc_links = "".join(
         f'<li><a href="#{html_cell(anchor)}">{html_cell(label)}</a></li>'
-        for anchor, label in toc_items)
-    lines = [f"""<!doctype html>
+        for anchor, label in toc_items
+    )
+    lines = [
+        f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html_cell(profile['board'])} manufacturing preflight</title>
+  <title>{html_cell(profile["board"])} manufacturing preflight</title>
   <style>
     :root {{
       color-scheme: light;
@@ -1523,7 +1521,7 @@ def write_report(
 <body>
 <header>
   <div class="container">
-    <h1>{html_cell(profile['board'])} manufacturing preflight</h1>
+    <h1>{html_cell(profile["board"])} manufacturing preflight</h1>
     <div class="summary">
       <span class="status {result_class}">{result}</span>
       <span>Generated <time id="generated-time"
@@ -1543,30 +1541,34 @@ def write_report(
   <h2>Automated Checks</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>Result</th><th>Check</th><th>Detail</th></tr></thead>
-    <tbody>"""]
+    <tbody>"""
+    ]
     for check in audit.checks:
         status = "PASS" if check.passed else "FAIL"
-        detail = (
-            check.detail_html
-            if check.detail_html is not None else html_cell(check.detail))
+        detail = check.detail_html if check.detail_html is not None else html_cell(check.detail)
         lines.append(
             f"<tr><td>{html_status(status)}</td>"
             f"<td>{html_cell(check.name)}</td>"
-            f'<td class="detail">{detail}</td></tr>')
+            f'<td class="detail">{detail}</td></tr>'
+        )
     lines.append("</tbody></table></div></section>")
 
     if audit.device_rows:
-        lines.extend(["""
+        lines.extend(
+            [
+                """
 <section id="nets-by-device">
   <h2>Nets By Device</h2>
   <p class="warning">Each pad lists the other populated device pads on its physical net.
   Identified ground and supply planes are abbreviated as GND and VCC.</p>
-"""])
+"""
+            ]
+        )
         for device in audit.device_rows:
             part_name = (
-                f'<span class="device-part-name">'
-                f'{html_cell(device["part_name"])}</span>'
-                if device["part_name"] else ""
+                f'<span class="device-part-name">{html_cell(device["part_name"])}</span>'
+                if device["part_name"]
+                else ""
             )
             lines.append(
                 f'<article class="device" id="{html_cell(device["anchor"])}">'
@@ -1575,28 +1577,33 @@ def write_report(
                 f'<span class="device-meta">{html_cell(device["manufacturer"])} · '
                 f'<a href="{html_cell(device["lcsc_url"])}" target="_blank" '
                 f'rel="noopener noreferrer">{html_cell(device["lcsc"])}</a>'
-                '</span></h3><ol class="device-pads">')
+                '</span></h3><ol class="device-pads">'
+            )
             for pad in device["pads"]:
                 if pad["connection_kind"] == "power":
                     connections = " / ".join(
-                        f"<strong>{html_cell(name)}</strong>"
-                        for name in pad["connections"])
+                        f"<strong>{html_cell(name)}</strong>" for name in pad["connections"]
+                    )
                 elif pad["connection_kind"] == "pads":
                     connections = ", ".join(
                         f'<a class="pad-link" href="#{html_cell(peer["anchor"])}">'
-                        f'<code>{html_cell(peer["label"])}</code></a>'
-                        for peer in pad["connections"])
+                        f"<code>{html_cell(peer['label'])}</code></a>"
+                        for peer in pad["connections"]
+                    )
                 else:
                     connections = html_cell("; ".join(pad["connections"]))
                 lines.append(
                     f'<li id="{html_cell(pad["anchor"])}">'
                     f"<code>{html_cell(pad['device_pad'])}</code>"
-                    f'<span class="connection">&rarr; {connections}</span></li>')
+                    f'<span class="connection">&rarr; {connections}</span></li>'
+                )
             lines.append("</ol></article>")
         lines.append("</section>")
 
     if audit.net_rows:
-        lines.extend(["""
+        lines.extend(
+            [
+                """
 <section id="nets">
   <h2>Nets</h2>
   <p class="warning">Physical nets list every attached populated pad using the
@@ -1604,13 +1611,13 @@ def write_report(
   <div class="table-wrap"><table>
     <thead><tr><th>Physical net</th><th>Logical seed</th><th>Device.pad</th>
       <th>Footprint pad</th><th>LCSC</th><th>Layers</th></tr></thead>
-    <tbody>"""])
+    <tbody>"""
+            ]
+        )
         previous_net = None
         for row in audit.net_rows:
             repeated = row["net"] == previous_net
-            row_id = (
-                "" if repeated else
-                f' id="{html_cell(net_anchor(row["net"]))}"')
+            row_id = "" if repeated else f' id="{html_cell(net_anchor(row["net"]))}"'
             lines.append(
                 f"<tr{row_id}>"
                 f"<td><code>{'' if repeated else html_cell(row['net'])}</code></td>"
@@ -1619,12 +1626,15 @@ def write_report(
                 f"<td><code>{html_cell(row['footprint_pad'])}</code></td>"
                 f"<td><code>{html_cell(row['lcsc'])}</code></td>"
                 f"<td>{'' if repeated else html_cell(row['layers'])}</td>"
-                "</tr>")
+                "</tr>"
+            )
             previous_net = row["net"]
         lines.append("</tbody></table></div></section>")
 
     if audit.topology_rows:
-        lines.extend(["""
+        lines.extend(
+            [
+                """
 <section id="copper-topology">
   <h2>Copper Topology</h2>
   <p class="warning">Physical nets are reconstructed from connected copper regions,
@@ -1632,7 +1642,9 @@ def write_report(
   <div class="table-wrap"><table>
     <thead><tr><th>Net</th><th>Logical seeds</th><th>Layers</th>
       <th>Components</th><th>Connectors</th><th>Copper area (mm²)</th></tr></thead>
-    <tbody>"""])
+    <tbody>"""
+            ]
+        )
         for row in audit.topology_rows:
             lines.append(
                 f"<tr><td><code>{html_cell(row['net'])}</code></td>"
@@ -1640,11 +1652,14 @@ def write_report(
                 f"<td>{html_cell(row['layers'])}</td>"
                 f"<td>{html_cell(row['components'])}</td>"
                 f"<td>{html_cell(row['connectors'])}</td>"
-                f"<td>{html_cell(row['area'])}</td></tr>")
+                f"<td>{html_cell(row['area'])}</td></tr>"
+            )
         lines.append("</tbody></table></div></section>")
 
     if audit.pad_rows:
-        lines.extend(["""
+        lines.extend(
+            [
+                """
 <section id="external-pad-attachment">
   <h2>External Pad Attachment</h2>
   <p class="warning">Pad geometry comes from cached EasyEDA footprints selected by
@@ -1654,7 +1669,9 @@ def write_report(
     <thead><tr><th>Result</th><th>Device.pad</th><th>Footprint pad</th>
       <th>LCSC</th><th>Copper layers</th><th>Center (mm)</th>
       <th>Physical net</th><th>Overlap (mm²)</th></tr></thead>
-    <tbody>"""])
+    <tbody>"""
+            ]
+        )
         for row in audit.pad_rows:
             lines.append(
                 f"<tr><td>{html_status(row['status'])}</td>"
@@ -1664,10 +1681,13 @@ def write_report(
                 f"<td>{html_cell(row['layers'])}</td>"
                 f"<td>{html_cell(row['center'])}</td>"
                 f"<td><code>{html_cell(row['nets'])}</code></td>"
-                f"<td>{html_cell(row['overlap'])}</td></tr>")
+                f"<td>{html_cell(row['overlap'])}</td></tr>"
+            )
         lines.append("</tbody></table></div></section>")
 
-    lines.extend(["""
+    lines.extend(
+        [
+            """
 <section id="jlcpcb-bom-audit">
   <h2>JLCPCB BOM Audit</h2>
   <p class="warning">For discrete rows, Comment is the electrical value; for part
@@ -1676,7 +1696,9 @@ def write_report(
     <thead><tr><th>Result</th><th>Designator</th><th>LCSC</th><th>Kind</th>
       <th>Comment</th><th>BOM footprint</th><th>Manufacturer part</th>
       <th>Manufacturer package</th><th>JLCPCB class</th></tr></thead>
-    <tbody>"""])
+    <tbody>"""
+        ]
+    )
     for row in audit.bom_rows:
         lines.append(
             f"<tr><td>{html_status(row['status'])}</td>"
@@ -1687,30 +1709,39 @@ def write_report(
             f"<td>{html_cell(row['footprint'])}</td>"
             f"<td>{html_cell(row['mpn'])}</td>"
             f"<td>{html_cell(row['manufacturer_footprint'])}</td>"
-            f"<td>{html_cell(row['jlcpcb_class'])}</td></tr>")
+            f"<td>{html_cell(row['jlcpcb_class'])}</td></tr>"
+        )
     lines.append("</tbody></table></div></section>")
 
-    lines.extend(['<section id="manual-checks">'
-                  "<h2>Board-Specific Manual Checks</h2>",
-                  '<ul class="checklist">'])
+    lines.extend(
+        [
+            '<section id="manual-checks"><h2>Board-Specific Manual Checks</h2>',
+            '<ul class="checklist">',
+        ]
+    )
     manual_checks = profile.get("manual_checks", [])
     if manual_checks:
         lines.extend(
-            f'<li><input type="checkbox" disabled>{html_cell(item)}</li>'
-            for item in manual_checks)
+            f'<li><input type="checkbox" disabled>{html_cell(item)}</li>' for item in manual_checks
+        )
     else:
         lines.append(
             '<li><input type="checkbox" disabled>No profile-specific items; '
-            "complete the skill's general CAM gate.</li>")
+            "complete the skill's general CAM gate.</li>"
+        )
     lines.append("</ul></section>")
 
     if generation_output.strip():
-        lines.extend([
-            '<section id="generator-output"><h2>Generator Output</h2><pre>',
-            html_cell(generation_output.rstrip()),
-            "</pre></section>",
-        ])
-    lines.extend(["""
+        lines.extend(
+            [
+                '<section id="generator-output"><h2>Generator Output</h2><pre>',
+                html_cell(generation_output.rstrip()),
+                "</pre></section>",
+            ]
+        )
+    lines.extend(
+        [
+            """
 </main>
 <script>
   function updateGeneratedAge() {
@@ -1756,33 +1787,37 @@ def write_report(
   if (location.hash) highlightPad(decodeURIComponent(location.hash.slice(1)));
 </script>
 </body>
-</html>"""])
+</html>"""
+        ]
+    )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Preflight a profiled CuFlow PCB for manufacturing")
+        description="Preflight a profiled CuFlow PCB for manufacturing"
+    )
     parser.add_argument("board", help="board/profile name, for example spiq_a")
     parser.add_argument(
-        "--profile", type=Path,
-        help="profile JSON path (default: preflight/<board>.json)")
+        "--profile", type=Path, help="profile JSON path (default: preflight/<board>.json)"
+    )
     parser.add_argument(
-        "--no-generate", action="store_true",
-        help="inspect existing outputs without regenerating the board")
+        "--no-generate",
+        action="store_true",
+        help="inspect existing outputs without regenerating the board",
+    )
     parser.add_argument(
-        "--python", dest="python_executable", type=Path,
-        help="Python interpreter for the board generator (overrides profile)")
-    parser.add_argument(
-        "--report", type=Path,
-        help="report path (default: <board>-preflight.html)")
+        "--python",
+        dest="python_executable",
+        type=Path,
+        help="Python interpreter for the board generator (overrides profile)",
+    )
+    parser.add_argument("--report", type=Path, help="report path (default: <board>-preflight.html)")
     return parser.parse_args()
 
 
-def configured_python(
-        args: argparse.Namespace, profile: dict[str, Any]) -> Path:
-    configured = (
-        args.python_executable or Path(profile.get("python", sys.executable)))
+def configured_python(args: argparse.Namespace, profile: dict[str, Any]) -> Path:
+    configured = args.python_executable or Path(profile.get("python", sys.executable))
     executable = configured.expanduser()
     return executable if executable.is_absolute() else ROOT / executable
 
@@ -1790,8 +1825,8 @@ def configured_python(
 def main() -> int:
     args = parse_args()
     profile_path = (
-        args.profile if args.profile is not None
-        else ROOT / "preflight" / f"{args.board}.json")
+        args.profile if args.profile is not None else ROOT / "preflight" / f"{args.board}.json"
+    )
     if not profile_path.is_absolute():
         profile_path = ROOT / profile_path
     try:
@@ -1801,8 +1836,9 @@ def main() -> int:
         return 2
     if profile.get("board") != args.board:
         print(
-            f"preflight: profile board {profile.get('board')!r} does not match "
-            f"{args.board!r}", file=sys.stderr)
+            f"preflight: profile board {profile.get('board')!r} does not match {args.board!r}",
+            file=sys.stderr,
+        )
         return 2
 
     python_executable = configured_python(args, profile)
@@ -1812,18 +1848,19 @@ def main() -> int:
         except ModuleNotFoundError:
             if Path(sys.executable).absolute() == python_executable.absolute():
                 print(
-                    "preflight: topology checks require Shapely in "
-                    f"{python_executable}", file=sys.stderr)
+                    f"preflight: topology checks require Shapely in {python_executable}",
+                    file=sys.stderr,
+                )
                 return 2
             try:
                 os.execv(
                     str(python_executable),
-                    [str(python_executable), str(Path(__file__).resolve()),
-                     *sys.argv[1:]])
+                    [str(python_executable), str(Path(__file__).resolve()), *sys.argv[1:]],
+                )
             except OSError as error:
                 print(
-                    f"preflight: cannot restart with {python_executable}: "
-                    f"{error}", file=sys.stderr)
+                    f"preflight: cannot restart with {python_executable}: {error}", file=sys.stderr
+                )
                 return 2
 
     audit = Audit()
@@ -1834,8 +1871,13 @@ def main() -> int:
         source = relative_path(profile["source"])
         try:
             result = subprocess.run(
-                [str(python_executable), str(source)], cwd=ROOT, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+                [str(python_executable), str(source)],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
             generation_output = result.stdout
             return_code: int | None = result.returncode
         except OSError as error:
@@ -1845,8 +1887,8 @@ def main() -> int:
             "Board generation",
             return_code == 0,
             f"{source.name} via {python_executable} exited {return_code}"
-            if return_code is not None else
-            f"could not run {python_executable}: {generation_output}",
+            if return_code is not None
+            else f"could not run {python_executable}: {generation_output}",
         )
 
     catalog = load_catalog(audit, relative_path(profile["part_catalog"]))
@@ -1863,7 +1905,8 @@ def main() -> int:
     failures = [check for check in audit.checks if not check.passed]
     print(
         f"{args.board}: {'PASS' if audit.passed else 'FAIL'} "
-        f"({len(audit.checks) - len(failures)}/{len(audit.checks)} checks passed)")
+        f"({len(audit.checks) - len(failures)}/{len(audit.checks)} checks passed)"
+    )
     for failure in failures:
         print(f"FAIL: {failure.name}: {failure.detail}")
     print(f"Report: {report_path}")

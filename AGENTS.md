@@ -5,6 +5,17 @@ Always use this Python on Mac:
 and this Python on Linux:
 /home/jamesb/py313/bin/python
 
+## Layout
+
+The library lives in `src/cuflow/` (installed with `pip install -e .`) and the
+board scripts live in `examples/`. Always run board scripts from the repository
+root so their generated outputs land in the repository root, as CI expects:
+
+    python examples/td2e2.py
+
+EAGLE libraries are under `hardware/libraries/`; the preflight, assembly and
+topology tools live in `tools/`.
+
 ## Gerber viewer reload
 
 Run `./gerbv-reload` at the end of every board-changing operation so the

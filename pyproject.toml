@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cuflow"
+version = "0.1.0"
+description = "CuFlow (\"Copper Flow\"): an experimental procedural PCB layout program."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "James Bowman" }]
+keywords = ["pcb", "eda", "gerber", "layout", "hardware", "procedural"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "pillow",
+    "svgwrite",
+    "shapely",
+    "svgelements",
+    "numpy",
+    "easyeda2kicad==1.0.1",
+]
+
+[project.optional-dependencies]
+# Optional acceleration for the grid router (cuflow.router).
+router = ["scipy"]
+dev = ["pytest", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/Spritetm/cuflow"
+Repository = "https://github.com/Spritetm/cuflow"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+# ``examples/`` holds long-lived board scripts whose style predates this
+# packaging pass; they are intentionally excluded from the default lint gate.
+# ``cellcad/``, ``mktiles/`` and ``route/`` are standalone legacy experiments.
+extend-exclude = ["webviewer", "assets", "examples", "cellcad", "mktiles", "route"]
+
+[tool.ruff.lint]
+# Baseline rules for a codebase with a long, permissive history.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length is not enforced on legacy board scripts
+    "E7",    # statement-level style; too noisy for generated layout code
+    "E741",  # ambiguous variable names (l, I, O) are used in geometry math
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The core layout engine keeps a number of exploratory locals that are
+# intentionally assigned but not read (debug/`if 0:` scaffolding). They are
+# left in place to keep behaviour identical; cleanup is tracked separately.
+"src/cuflow/cuflow.py" = ["F841"]
+"src/cuflow/hex.py" = ["F841"]
+"src/cuflow/hexboard.py" = ["F841"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

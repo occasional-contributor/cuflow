@@ -23,7 +23,7 @@ import pygame as pg
 
 sys.path.append("..")
 
-import hex
+from cuflow import hex
 
 # ----------------------------
 # Config

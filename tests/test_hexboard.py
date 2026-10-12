@@ -2,8 +2,8 @@ import unittest
 
 import shapely.geometry as sg
 
-from hex import Hex, axial_direction_vectors
-from hexboard import HexBoard
+from cuflow.hex import Hex, axial_direction_vectors
+from cuflow.hexboard import HexBoard
 
 
 class HexRouteNetWidthTests(unittest.TestCase):
@@ -23,8 +23,7 @@ class HexRouteNetWidthTests(unittest.TestCase):
     def terminals(self, board):
         result = []
         for index, xy in enumerate(((2, 2), (10, 2), (6, 10))):
-            terminal = board.DC(
-                Hex.from_xy_fine(*xy).to_plane()).setlayer("GTL")
+            terminal = board.DC(Hex.from_xy_fine(*xy).to_plane()).setlayer("GTL")
             terminal.part = f"J{index + 1}"
             terminal.setname("1")
             result.append(terminal)
@@ -32,8 +31,7 @@ class HexRouteNetWidthTests(unittest.TestCase):
 
     def test_edge_blocks_follow_outline_on_both_layers(self):
         board = self.board()
-        board.outline_polygon = sg.Polygon([
-            (0, 3), (3, 0), (12, 0), (12, 12), (0, 12)])
+        board.outline_polygon = sg.Polygon([(0, 3), (3, 0), (12, 0), (12, 12), (0, 12)])
         board.hex_edge_clearance = 0.4
         board.hex_setup()
         corner = Hex.from_xy_fine(1, 1)
@@ -47,9 +45,7 @@ class HexRouteNetWidthTests(unittest.TestCase):
         board.hex_edge_clearance = 0.4
         narrow = board.edge_blocks(0.1)
         wide = board.edge_blocks(0.8)
-        self.assertTrue(any(
-            wide[h.q, h.r] and not narrow[h.q, h.r]
-            for h in board.route_hexes))
+        self.assertTrue(any(wide[h.q, h.r] and not narrow[h.q, h.r] for h in board.route_hexes))
 
     def test_point_and_net_endpoints_cannot_override_edge_blocks(self):
         board = self.board()
@@ -69,16 +65,11 @@ class HexRouteNetWidthTests(unittest.TestCase):
 
         routes = board.hex_route_net(self.terminals(board))
 
-        occupied = {
-            tuple(cell)
-            for route in routes
-            for cell in route
-        }
+        occupied = {tuple(cell) for route in routes for cell in route}
         newly_blocked = {
             tuple(cell)
             for cell in board.route_hexes
-            if not before[cell.q, cell.r]
-            and board.blocked["GTL"][cell.q, cell.r]
+            if not before[cell.q, cell.r] and board.blocked["GTL"][cell.q, cell.r]
         }
         self.assertEqual(newly_blocked, occupied)
         self.assertEqual(board.route_widths, [board.trace] * 3)
@@ -95,23 +86,21 @@ class HexRouteNetWidthTests(unittest.TestCase):
             cell
             for route in routes
             for cell in route[1:-1]
-            if all(tuple(cell + direction) in board.valid_cells
-                   for direction in directions)
+            if all(tuple(cell + direction) in board.valid_cells for direction in directions)
         )
-        self.assertTrue(all(
-            board.blocked["GTL"][
-                (interior + direction).q,
-                (interior + direction).r,
-            ]
-            for direction in directions
-        ))
+        self.assertTrue(
+            all(
+                board.blocked["GTL"][
+                    (interior + direction).q,
+                    (interior + direction).r,
+                ]
+                for direction in directions
+            )
+        )
 
         board.wire_routes()
         self.assertEqual(len(board.layers["GTL"].polys), 3)
-        self.assertTrue(all(
-            polygon.area > 0
-            for _, polygon in board.layers["GTL"].polys
-        ))
+        self.assertTrue(all(polygon.area > 0 for _, polygon in board.layers["GTL"].polys))
 
     def test_width_must_be_positive(self):
         board = self.board()
@@ -166,14 +155,12 @@ class HexRouteNetWidthTests(unittest.TestCase):
             silk=0.1,
         )
         terminals = list(self.terminals(board))
-        terminal = board.DC(
-            Hex.from_xy_fine(6, 6).to_plane()).setlayer("GTL")
+        terminal = board.DC(Hex.from_xy_fine(6, 6).to_plane()).setlayer("GTL")
         terminal.part = "J4"
         terminal.setname("1")
         terminals.append(terminal)
         for terminal in terminals:
-            board.layers["GTL"].add(
-                sg.Point(terminal.xy).buffer(0.2), terminal.name)
+            board.layers["GTL"].add(sg.Point(terminal.xy).buffer(0.2), terminal.name)
         board.drill(terminals[0].xy, 0.3)
         board.hex_setup()
 
@@ -198,14 +185,15 @@ class HexRouteNetWidthTests(unittest.TestCase):
         pad.part = "Y1"
         pad.setname("CLK")
         pad.boundary = sg.box(
-            pad_center[0] - 0.65, pad_center[1] - 0.6,
-            pad_center[0] + 0.65, pad_center[1] + 0.6,
+            pad_center[0] - 0.65,
+            pad_center[1] - 0.6,
+            pad_center[0] + 0.65,
+            pad_center[1] + 0.6,
         )
         board.layers["GTL"].add(pad.boundary, pad.name)
 
         obstacle_cell = Hex.from_xy_fine(2, 2)
-        board.layers["GTL"].add(
-            sg.Point(obstacle_cell.to_plane()).buffer(0.1), "obstacle")
+        board.layers["GTL"].add(sg.Point(obstacle_cell.to_plane()).buffer(0.1), "obstacle")
         source_cell = Hex.from_xy_fine(10, 6)
         source = board.DC(source_cell.to_plane()).setlayer("GTL")
         source.part = "U1"
@@ -215,7 +203,8 @@ class HexRouteNetWidthTests(unittest.TestCase):
         endpoint = board.pad_endpoint(pad)
         seeds = board.pad_hex_cells(endpoint)
         pad_exempt = board._blocked_for_width(
-            "GTL", board.trace,
+            "GTL",
+            board.trace,
             exempt_geometries=(pad.boundary,),
         )
         peripheral = {
@@ -257,8 +246,10 @@ class HexRouteNetWidthTests(unittest.TestCase):
             draw.part = part
             draw.setname("1")
             draw.boundary = sg.box(
-                center[0] - 0.65, center[1] - 0.6,
-                center[0] + 0.65, center[1] + 0.6,
+                center[0] - 0.65,
+                center[1] - 0.6,
+                center[0] + 0.65,
+                center[1] + 0.6,
             )
             board.layers["GTL"].add(draw.boundary, draw.name)
             return draw
@@ -275,8 +266,7 @@ class HexRouteNetWidthTests(unittest.TestCase):
         second_endpoint = board.pad_endpoint(second)
         first_seeds = board.pad_hex_cells(first_endpoint)
         second_seeds = board.pad_hex_cells(second_endpoint)
-        routes = board.hex_route_net(
-            (first_endpoint, plain, second_endpoint))
+        routes = board.hex_route_net((first_endpoint, plain, second_endpoint))
 
         self.assertEqual(len(routes), 3)
         self.assertIn(tuple(routes[0][-1]), first_seeds)
@@ -284,8 +274,7 @@ class HexRouteNetWidthTests(unittest.TestCase):
         self.assertIn(tuple(routes[2][-1]), second_seeds)
         self.assertEqual(
             board.nets,
-            [(("C1", "1"), ("U1", "VOUT")),
-             (("C1", "1"), ("C2", "1"))],
+            [(("C1", "1"), ("U1", "VOUT")), (("C1", "1"), ("C2", "1"))],
         )
 
     def test_pad_source_can_reach_plain_destination_on_copper(self):
@@ -304,8 +293,10 @@ class HexRouteNetWidthTests(unittest.TestCase):
         pad.part = "R1"
         pad.setname("1")
         pad.boundary = sg.box(
-            pad_center[0] - 0.65, pad_center[1] - 0.6,
-            pad_center[0] + 0.65, pad_center[1] + 0.6,
+            pad_center[0] - 0.65,
+            pad_center[1] - 0.6,
+            pad_center[0] + 0.65,
+            pad_center[1] + 0.6,
         )
         board.layers["GTL"].add(pad.boundary, pad.name)
 
@@ -313,8 +304,7 @@ class HexRouteNetWidthTests(unittest.TestCase):
         target = board.DC(target_cell.to_plane()).setlayer("GTL")
         target.part = "J1"
         target.setname("A7")
-        board.layers["GTL"].add(
-            sg.Point(target.xy).buffer(board.trace / 2), target.name)
+        board.layers["GTL"].add(sg.Point(target.xy).buffer(board.trace / 2), target.name)
         board.hex_setup()
 
         route = board.hex_route(board.pad_endpoint(pad), target)
